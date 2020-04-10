@@ -29,7 +29,7 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
     @IBAction func goToPreviousSol(_ sender: Any?) {
         guard let solDescription = solDescription else { return }
         guard let solDescriptions = roverInfo?.solDescriptions else { return }
-        guard let index = solDescriptions.index(of: solDescription) else { return }
+        guard let index = solDescriptions.firstIndex(of: solDescription) else { return }
         guard index > 0 else { return }
         self.solDescription = solDescriptions[index-1]
     }
@@ -37,7 +37,7 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
     @IBAction func goToNextSol(_ sender: Any?) {
         guard let solDescription = solDescription else { return }
         guard let solDescriptions = roverInfo?.solDescriptions else { return }
-        guard let index = solDescriptions.index(of: solDescription) else { return }
+        guard let index = solDescriptions.firstIndex(of: solDescription) else { return }
         guard index < solDescriptions.count - 1 else { return }
         self.solDescription = solDescriptions[index+1]
     }
@@ -104,7 +104,7 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
     private func configureTitleView() {
         
         let font = UIFont.systemFont(ofSize: 30)
-        let attrs = [NSAttributedStringKey.font: font]
+        let attrs = [NSAttributedString.Key.font: font]
         
         let prevButton = UIButton(type: .system)
         let prevTitle = NSAttributedString(string: "<", attributes: attrs)
@@ -134,17 +134,18 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
         let photoReference = photoReferences[indexPath.item]
         
         // Check for image in cache
-        if let cachedImageData = cache.value(for: photoReference.id),
-            let image = UIImage(data: cachedImageData) {
-            cell.imageView.image = image.filtered()
+        if let cachedFilteredImage = cache.value(for: photoReference.id) {
+            cell.imageView.image = cachedFilteredImage
             return
         }
         
         // Start an operation to fetch image data
         let fetchOp = FetchPhotoOperation(photoReference: photoReference)
+        let filterOperation = FilterImageOperation(fetchOperation: fetchOp)
+   
         let cacheOp = BlockOperation {
-            if let data = fetchOp.imageData {
-                self.cache.cache(value: data, for: photoReference.id)
+            if let filteredImage = filterOperation.filteredImage {
+                self.cache.cache(value: filteredImage, for: photoReference.id)
             }
         }
         let completionOp = BlockOperation {
@@ -154,15 +155,18 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
                 currentIndexPath != indexPath {
                 return // Cell has been reused
             }
-            
-            if let data = fetchOp.imageData {
-                cell.imageView.image = UIImage(data: data)?.filtered()
-            }
+            guard let filteredImage = filterOperation.filteredImage else { return }
+            cell.imageView.image = filteredImage
         }
         
-        cacheOp.addDependency(fetchOp)
-        completionOp.addDependency(fetchOp)
+        // Making sure that the following happen in order:
+        // 1. 'fetchOp' has no dependencies
+        // 2. 'filterOperation'
+        filterOperation.addDependency(fetchOp)
+        cacheOp.addDependency(filterOperation)
+        completionOp.addDependency(filterOperation)
         
+        photoFetchQueue.addOperation(filterOperation)
         photoFetchQueue.addOperation(fetchOp)
         photoFetchQueue.addOperation(cacheOp)
         OperationQueue.main.addOperation(completionOp)
@@ -173,7 +177,7 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
     // Properties
     
     private let client = MarsRoverClient()
-    private let cache = Cache<Int, Data>()
+    private let cache = Cache<Int, UIImage>()
     private let photoFetchQueue = OperationQueue()
     private var operations = [Int : Operation]()
     
