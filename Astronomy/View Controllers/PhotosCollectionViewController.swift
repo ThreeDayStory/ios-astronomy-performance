@@ -24,6 +24,10 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
         
         configureTitleView()
         updateViews()
+        
+        photoFetchQueue.maxConcurrentOperationCount = 4
+        imageFilteringQueue.maxConcurrentOperationCount = 4
+
     }
     
     @IBAction func goToPreviousSol(_ sender: Any?) {
@@ -166,7 +170,7 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
         cacheOp.addDependency(filterOperation)
         completionOp.addDependency(filterOperation)
         
-        photoFetchQueue.addOperation(filterOperation)
+        imageFilteringQueue.addOperation(filterOperation)
         photoFetchQueue.addOperation(fetchOp)
         photoFetchQueue.addOperation(cacheOp)
         OperationQueue.main.addOperation(completionOp)
@@ -179,6 +183,7 @@ class PhotosCollectionViewController: UIViewController, UICollectionViewDataSour
     private let client = MarsRoverClient()
     private let cache = Cache<Int, UIImage>()
     private let photoFetchQueue = OperationQueue()
+    private let imageFilteringQueue = OperationQueue()
     private var operations = [Int : Operation]()
     
     private var roverInfo: MarsRover? {
